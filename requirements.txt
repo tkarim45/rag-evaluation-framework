@@ -1,0 +1,10 @@
+ragas
+langchain
+langchain-openai
+langchain-community
+chromadb
+openai
+pandas
+matplotlib
+python-dotenv
+pyyaml

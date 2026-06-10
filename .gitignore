@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.deepeval/
+.DS_Store
+results/*.json
+chroma_db/
+*.log
