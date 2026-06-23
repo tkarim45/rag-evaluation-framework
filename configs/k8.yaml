@@ -1,0 +1,6 @@
+name: k8
+description: "Retrieval-depth sweep: k=8. Hypothesis: higher k raises recall, noise may dip relevancy/faithfulness."
+chunk_size: 1000
+chunk_overlap: 200
+top_k: 8
+prompt: strict

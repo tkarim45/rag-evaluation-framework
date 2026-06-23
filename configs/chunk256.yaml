@@ -1,0 +1,6 @@
+name: chunk256
+description: "Chunk-size sweep: 256. Hypothesis: smaller chunks raise recall, risk faithfulness on fragmented context."
+chunk_size: 256
+chunk_overlap: 50
+top_k: 4
+prompt: strict

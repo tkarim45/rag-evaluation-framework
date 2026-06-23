@@ -1,0 +1,6 @@
+name: chunk2000
+description: "Chunk-size sweep: 2000. Hypothesis: larger chunks dilute recall, may help faithfulness."
+chunk_size: 2000
+chunk_overlap: 400
+top_k: 4
+prompt: strict

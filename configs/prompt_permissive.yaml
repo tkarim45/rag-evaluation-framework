@@ -1,0 +1,6 @@
+name: prompt_permissive
+description: "Prompt variant: permissive vs baseline strict. Watch the faithfulness/relevancy trade-off."
+chunk_size: 1000
+chunk_overlap: 200
+top_k: 4
+prompt: permissive

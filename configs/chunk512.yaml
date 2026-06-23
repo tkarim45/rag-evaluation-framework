@@ -1,0 +1,6 @@
+name: chunk512
+description: "Chunk-size sweep: 512."
+chunk_size: 512
+chunk_overlap: 100
+top_k: 4
+prompt: strict

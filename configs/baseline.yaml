@@ -1,0 +1,8 @@
+name: baseline
+description: "Baseline — chunk 1000/overlap 200, k=4, strict grounding prompt. The 'before' numbers."
+chunk_size: 1000
+chunk_overlap: 200
+top_k: 4
+prompt: strict
+gen_model: global.anthropic.claude-haiku-4-5-20251001-v1:0
+embed_model: amazon.titan-embed-text-v2:0

@@ -1,0 +1,6 @@
+name: k2
+description: "Retrieval-depth sweep: k=2. Reuses the baseline store (same chunking)."
+chunk_size: 1000
+chunk_overlap: 200
+top_k: 2
+prompt: strict

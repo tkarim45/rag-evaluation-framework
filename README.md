@@ -1,185 +1,181 @@
 # RAG Evaluation Framework
 
-> **Project 2 of 5 — LLM Evaluation Portfolio.**
-> Build a RAG pipeline AND an evaluation suite that scores it across three dimensions —
-> Faithfulness, Answer Relevancy, and Context Recall — then prove you can measure the
-> impact of every change you make (chunking, retrieval depth, prompts) with before/after
-> numbers.
+> A config-driven RAG pipeline **and** an automated evaluation suite that scores it on
+> **Faithfulness**, **Answer Relevancy**, and **Context Recall** — then measures the impact of
+> every change (chunk size, retrieval depth, prompt) with reproducible before/after numbers.
+
+Built on **AWS Bedrock** (Claude + Titan embeddings), **LangChain**, **ChromaDB**, and
+**RAGAS**. The point isn't "build a RAG app" — most do, then test five questions by hand and
+call it done. The point is to *measure* the pipeline, change one variable, and *measure again*.
 
 ---
 
-## 1. What this project is
+## Why this exists
 
-Most people who build RAG apps have no idea how well they actually work — they test a
-handful of questions manually and call it done. This project closes that gap. You will:
+"The RAG is bad" is useless. "Context Recall is 0.67 at k=2 because retrieval misses evidence on
+multi-fact questions" is actionable. This project decomposes RAG quality into three orthogonal
+metrics that localize *where* a pipeline fails:
 
-1. Build a simple but real RAG pipeline (documents → chunks → embeddings → vector store →
-   retrieval → answer generation).
-2. Auto-generate a **synthetic evaluation dataset** (100–200 QA pairs) from your own
-   corpus using RAGAS's test-set generator — no human labeling required.
-3. Score the pipeline on three orthogonal metrics that localize failures:
-
-   | Metric | Question it answers | Failure it catches |
-   |---|---|---|
-   | **Faithfulness** | Does the answer stay grounded in retrieved context? | generation hallucinating beyond the docs |
-   | **Answer Relevancy** | Does the answer actually address the question? | evasive / off-topic answers |
-   | **Context Recall** | Did retrieval surface the right documents? | retrieval missing the needed evidence |
-
-4. Run controlled **experiments**: change one variable (chunk size, top-k, prompt
-   template), re-run eval, and analyze the trade-off (one score up, another down?).
-
-The deliverable is an experiment log with before/after scores — *measured, changed,
-measured again*. That pattern is what interviewers want to see.
-
-### Why it matters (industry context)
-
-Pinecone, LangChain, and LlamaIndex all use RAGAS as the standard RAG evaluation
-framework in their docs and tooling. It became the de facto open-source standard largely
-because it needs **no human-labeled data** — it generates its own test set from your
-documents. The three-metric decomposition matters because "the RAG is bad" is useless;
-"Context Recall is 0.71 on long documents → retrieval is the bottleneck" is actionable.
-
----
-
-## 2. Dataset — RAGAS synthetic test set (generated from your corpus)
-
-- **Corpus:** any document set works. Good options:
-  - 20–50 Wikipedia articles on one subject you know well (lets you sanity-check answers)
-  - a set of PDFs (docs, manuals, papers)
-  - alternatively, seed from HuggingFace QA corpora (SQuAD, Natural Questions) as documents
-- **Test set:** RAGAS `TestsetGenerator` produces realistic question/ground-truth pairs
-  from the corpus, including different question types (simple, reasoning, multi-context).
-  Target **100–200 pairs**.
-- **Critical rule:** generate once, eyeball ~20 questions for quality (drop broken ones),
-  then **freeze and commit** the test set. All experiments score against the same frozen set.
-- Docs: https://docs.ragas.io/en/stable/getstarted/rag_eval
-
-## 3. Tools / frameworks
-
-| Tool | Role | Install |
+| Metric | Question it answers | Failure it catches |
 |---|---|---|
-| **RAGAS** | test-set generation + 3 core metrics | `pip install ragas` |
-| **LangChain** | RAG orchestration (loaders, splitters, chains) | `pip install langchain langchain-openai langchain-community` |
-| **ChromaDB** | local vector store, zero infra | `pip install chromadb` |
-| `openai` | embeddings + generation + RAGAS judge LLM | `pip install openai` |
-| `pandas`, `matplotlib` | experiment comparison + charts | `pip install pandas matplotlib` |
+| **Faithfulness** | Is the answer grounded in retrieved context? | generation hallucinating beyond the docs |
+| **Answer Relevancy** | Does the answer address the question? | evasive / off-topic answers |
+| **Context Recall** | Did retrieval surface the right documents? | retrieval missing the needed evidence |
 
-- RAGAS: https://github.com/explodinggradients/ragas — works with any LLM/retriever,
-  integrates directly with LangChain and LlamaIndex.
-- Note RAGAS metrics are themselves LLM-computed (judge model) — pin the judge model and
-  temperature, and expect ±0.02–0.05 run-to-run noise; don't over-read tiny deltas.
+The test set is **synthetic** — RAGAS generates question/ground-truth pairs from the corpus, so
+there's no human labeling. It's generated once, frozen, and committed, so every experiment scores
+against an identical benchmark.
 
 ---
 
-## 4. Architecture
+## Architecture
 
 ```
-corpus/ (docs)
-   │ load + split (chunk_size, overlap)        configs/*.yaml  ← ONE experiment = ONE config
+corpus/ (28 Wikipedia articles)
+   │ load + split (chunk_size, overlap)         configs/*.yaml  ← ONE experiment = ONE config
    ▼
-┌──────────┐  embeddings   ┌──────────┐
-│ ingest.py│──────────────▶│ ChromaDB │
-└──────────┘               └────┬─────┘
-                                │ top-k retrieval
-   question ───────────────────▶│
-                                ▼
-                         ┌────────────┐   answer + retrieved contexts
-                         │   rag.py   │──────────────┐
-                         └────────────┘              ▼
-testset/ (frozen QA pairs) ────────────────▶ ┌──────────────┐
-                                             │ run_eval.py  │  RAGAS:
-                                             │              │  faithfulness
-                                             │              │  answer_relevancy
-                                             │              │  context_recall
-                                             └──────┬───────┘
-                                                    ▼
-                                          results/<config>.json
-                                                    │
-                                             compare.py → before/after table, charts
+┌──────────┐  Titan v2 embeddings   ┌──────────┐
+│ ingest.py│───────────────────────▶│ ChromaDB │   (collection cached by chunking params)
+└──────────┘                        └────┬─────┘
+                                         │ top-k retrieval
+   question ────────────────────────────▶│
+                                         ▼
+                                  ┌────────────┐   answer + retrieved contexts
+                                  │   rag.py   │ (Claude Haiku 4.5, temp=0)
+                                  └────────────┘
+testset/testset.json (frozen QA) ───────────────▶ ┌──────────────┐
+                                                  │ run_eval.py  │  RAGAS (judge: Claude Sonnet 4.6)
+                                                  └──────┬───────┘  faithfulness · answer_relevancy · context_recall
+                                                         ▼
+                                              results/<config>.json   (aggregate + per-question)
+                                                         │
+                                                  compare.py → table · slices · per-question diffs · chart
 ```
 
-Design principles:
-- **Config-driven experiments**: chunk size, overlap, top-k, prompt template, models all
-  live in a YAML config; a run is fully described by its config + frozen test set.
-- **Immutable results**: every run writes a new file; comparisons read old files.
-- **Per-question scores kept**, not just aggregates — the interesting analysis is *which*
-  questions fail (long docs? multi-hop? specific topics?).
+**Design principles**
+
+- **Config-driven experiments** — chunk size, overlap, top-k, prompt, and generation model live in
+  a YAML config. A run is fully described by its config + the frozen test set.
+- **Fixed judge & embeddings** — the RAGAS judge model and the embedding model are pinned
+  *project-wide*, never per-experiment. Changing them would make scores incomparable.
+- **Immutable results** — every run writes a new `results/<config>.json`; comparisons read old files.
+- **Per-question scores kept** — the interesting analysis is *which* questions fail (multi-hop?
+  long docs? a topic?), not just the aggregate.
+- **No wasted API spend** — the Chroma collection is keyed by chunking params, so configs that
+  differ only in `top_k` or `prompt` reuse an existing vector store instead of re-embedding.
 
 ---
 
-## 5. Build plan (step by step)
+## Stack
 
-### Phase 0 — Setup (30 min)
-1. `~/miniconda3/envs/personal/bin/pip install ragas langchain langchain-openai langchain-community chromadb openai pandas matplotlib python-dotenv pyyaml`
-2. `.env` with `OPENAI_API_KEY`; collect corpus into `corpus/` (start with ~20 Wikipedia
-   articles on one topic — fetch with `wikipedia` package or save manually).
+| Component | Choice |
+|---|---|
+| Generation LLM | AWS Bedrock — **Claude Haiku 4.5** (`global.anthropic.claude-haiku-4-5-...`) |
+| RAGAS judge LLM | AWS Bedrock — **Claude Sonnet 4.6** (fixed across all experiments) |
+| Embeddings | AWS Bedrock — **Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`, 1024-dim) |
+| Vector store | **ChromaDB** (local, persisted to `chroma_db/`) |
+| Orchestration | **LangChain** (`langchain-aws`, loaders, splitters) |
+| Evaluation | **RAGAS 0.2.15** (test-set generation + 3 core metrics) |
+| Corpus | 28 Wikipedia articles on space exploration |
 
-### Phase 1 — RAG pipeline (half day)
-1. `src/ingest.py`: load docs → `RecursiveCharacterTextSplitter(chunk_size, overlap)` →
-   OpenAI embeddings → persist ChromaDB collection named after the config.
-2. `src/rag.py`: `retrieve(question, k)` → stuff contexts into a prompt template →
-   generate answer (temperature=0). Return `{answer, contexts}` — RAGAS needs both.
-3. Manual smoke test on 5 questions you can verify yourself.
-
-### Phase 2 — Synthetic test set (2–3 hrs)
-1. `src/testset.py`: RAGAS `TestsetGenerator` over the corpus → 150 QA pairs with ground
-   truths. Review ~20 by hand; drop malformed ones.
-2. Freeze: write `testset/testset.json`, commit it. Never regenerate mid-project.
-
-### Phase 3 — Evaluation harness (half day)
-1. `src/run_eval.py`: for each test question → run pipeline → collect
-   `{question, answer, contexts, ground_truth}` → build RAGAS `EvaluationDataset` →
-   `evaluate()` with `faithfulness`, `answer_relevancy`, `context_recall`.
-2. Save aggregate + per-question scores to `results/<config>.json`.
-3. Run the **baseline config** (e.g. chunk 1000/overlap 200, k=4). These are your
-   "before" numbers.
-
-### Phase 4 — Experiments (1 day, the core of the project)
-Run one-variable experiments, each as a new config:
-1. **Chunk size sweep:** 256 / 512 / 1000 / 2000. Hypothesis: small chunks → recall up,
-   faithfulness risk on fragmented context.
-2. **Retrieval depth sweep:** k = 2 / 4 / 8. Hypothesis: higher k → recall up,
-   relevancy/faithfulness may dip from noise.
-3. **Prompt variants:** strict grounding prompt ("answer ONLY from context, else say you
-   don't know") vs permissive. Watch faithfulness vs relevancy trade-off.
-4. `src/compare.py`: table of all runs × 3 metrics; per-question diffs to find which
-   questions a change fixed/broke. Slice by question type / document length —
-   "ContextRecall 0.71 on long documents" is the kind of localized finding that makes
-   the project.
-
-### Phase 5 — Report (2–3 hrs)
-`reports/report.md`: baseline scores, experiment matrix, the trade-off you found,
-per-slice analysis, the config you'd ship and why, limitations (judge noise, synthetic
-test-set bias).
-
-### Stretch goals
-- Add a reranker (e.g. Cohere rerank or a cross-encoder) as an experiment.
-- Add hybrid retrieval (BM25 + dense) via LangChain's `EnsembleRetriever`.
-- Track ContextPrecision as a 4th metric; compare against ContextRecall.
+> **Bedrock note:** Claude on Bedrock requires an **inference-profile** id (the `global.*` / `us.*`
+> prefix). Bare model ids are rejected for on-demand invocation. Titan embeddings use the bare id.
 
 ---
 
-## 6. Definition of done
+## Quickstart
 
-- [ ] Working RAG pipeline, config-driven
-- [ ] Frozen, committed synthetic test set (100–200 QA pairs, hand-reviewed sample)
-- [ ] Baseline run with all 3 RAGAS metrics, per-question scores saved
-- [ ] ≥4 one-variable experiments with immutable result files
-- [ ] Comparison table + at least one localized finding (metric × slice)
-- [ ] `reports/report.md` with before/after numbers and a shipped-config recommendation
+Requires an AWS account with Bedrock access in `us-east-1` and **model access enabled** for Claude
+Haiku 4.5, Claude Sonnet 4.6, and Titan Embed Text v2.
 
-## 7. Resume bullets (template — replace with YOUR real numbers)
+```bash
+# 1. install (Python 3.12)
+pip install -r requirements.txt
 
-- *Built RAGAS evaluation suite scoring RAG pipeline on [N] synthetic test cases:
-  Faithfulness [x.xx], AnswerRelevancy [x.xx], ContextRecall [x.xx].*
-- *Identified retrieval as bottleneck (ContextRecall [x.xx] on long documents) —
-  chunking strategy change improved score to [x.xx] without affecting Faithfulness.*
+# 2. credentials — copy and fill in
+cp .env.example .env        # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION
 
-Run eval before and after a change; the before/after comparison IS the bullet.
+# 3. fetch the corpus (committed; skip if corpus/ is populated)
+python -m src.fetch_corpus
 
-## 8. References
+# 4. build the baseline vector store
+python -m src.ingest --config baseline
 
-- RAGAS docs: https://docs.ragas.io/en/stable/getstarted/rag_eval
-- RAGAS repo: https://github.com/explodinggradients/ragas
-- RAGAS paper: *"RAGAS: Automated Evaluation of Retrieval Augmented Generation"* (Es et al., 2023)
-- LangChain RAG tutorial: https://python.langchain.com/docs/tutorials/rag/
+# 5. smoke-test retrieval + generation
+python -m src.rag --config baseline --q "Who first walked on the Moon, and on which mission?"
+
+# 6. ONE-TIME: generate + freeze the synthetic test set, hand-review ~20 Qs, then commit it
+python -m src.testset --n 150
+
+# 7. score the baseline
+python -m src.run_eval --config baseline        # -> results/baseline.json
+
+# 8. run the experiment sweep (one variable each), then compare
+for c in chunk256 chunk512 chunk2000 k2 k8 prompt_permissive; do
+  python -m src.ingest --config $c              # k2/k8/prompt_* reuse the baseline store
+  python -m src.run_eval --config $c
+done
+python -m src.compare --all --baseline baseline --slice synthesizer
+```
+
+See **[RUNBOOK.md](RUNBOOK.md)** for full operational detail, cost knobs, and the OpenAI→Bedrock mapping.
+
+---
+
+## Experiments
+
+Each experiment changes exactly one variable from the baseline (chunk 1000 / overlap 200, k=4,
+strict prompt). Configs live in `configs/`:
+
+| Config | Variable | Hypothesis |
+|---|---|---|
+| `chunk256` / `chunk512` / `chunk2000` | chunk size | smaller chunks → recall up, faithfulness risk on fragmented context |
+| `k2` / `k8` | retrieval depth | higher k → recall up, relevancy/faithfulness may dip from noise |
+| `prompt_permissive` | prompt | permissive vs strict grounding → faithfulness/relevancy trade-off |
+
+`compare.py` produces an aggregate table, a per-slice breakdown (by question type), per-question
+diffs vs the baseline (which questions a change fixed or broke), and a grouped bar chart in
+`reports/`.
+
+---
+
+## Project layout
+
+```
+src/
+  config.py        # paths, model defaults, ExperimentConfig (judge + embeddings fixed project-wide)
+  bedrock.py       # Bedrock model factories + RAGAS wrappers; adaptive-retry client, parallel embeds
+  prompts.py       # strict vs permissive grounding prompts
+  fetch_corpus.py  # Wikipedia -> corpus/*.txt
+  ingest.py        # load -> split -> embed -> persist Chroma collection
+  rag.py           # retrieve top-k -> prompt -> generate; returns {answer, contexts}
+  testset.py       # RAGAS synthetic test-set generation (one-time, frozen)
+  run_eval.py      # run pipeline over test set + RAGAS scoring -> results/<config>.json
+  compare.py       # comparison table, slices, per-question diffs, charts
+configs/           # one YAML per experiment (baseline + 6 sweeps)
+corpus/            # source documents (committed)
+testset/           # frozen QA benchmark (committed once generated + reviewed)
+results/           # immutable per-run outputs + scores
+reports/           # experiment writeups + charts
+```
+
+---
+
+## Notes & limitations
+
+- **Judge noise** — RAGAS metrics are themselves LLM-computed; expect ±0.02–0.05 run-to-run
+  variance. Don't over-read tiny deltas. The judge model and `temperature=0` are pinned.
+- **RAGAS + Claude test-set generation** — RAGAS's `SummaryExtractor` expects strict JSON; Claude
+  occasionally returns prose, so some summary nodes are dropped during knowledge-graph construction
+  (logged as "Invalid json output"). The run still completes; the effect is fewer multi-hop
+  questions. Over-generate (`--n`) for more coverage.
+- **Synthetic test-set bias** — questions are generated from the corpus by an LLM, so they inherit
+  that model's framing. Hand-review before freezing.
+- **Throttling** — Bedrock on-demand throughput throttles under load. The client uses adaptive
+  retry; lower `RAGAS_MAX_WORKERS` in `.env` if you still hit `ThrottlingException`.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
