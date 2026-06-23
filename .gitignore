@@ -15,3 +15,6 @@ chroma_db/
 # reports/ (writeups + charts), corpus/ (source docs). Only ignore scratch result files.
 results/smoke*.json
 testset/smoke*.json
+
+# Local agent instructions — not for the public repo
+CLAUDE.md
