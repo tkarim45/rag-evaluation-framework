@@ -16,6 +16,8 @@ call it done. The point is to *measure* the pipeline, change one variable, and *
 multi-fact questions" is actionable. This project decomposes RAG quality into three orthogonal
 metrics that localize *where* a pipeline fails:
 
+> _That `0.67` is an illustrative example of the **shape** of a finding, not a committed result — `results/`, `testset/`, and `reports/` currently ship empty; run the sweep to produce live numbers._
+
 | Metric | Question it answers | Failure it catches |
 |---|---|---|
 | **Faithfulness** | Is the answer grounded in retrieved context? | generation hallucinating beyond the docs |
